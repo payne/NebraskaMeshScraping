@@ -1,0 +1,3 @@
+requests>=2.31
+# Optional: only needed if the API ever responds with msgpack instead of JSON
+msgpack>=1.0
