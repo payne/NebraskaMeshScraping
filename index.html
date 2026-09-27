@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebraska Mesh Nodes</title>
+<meta name="description" content="Summary of MeshCore nodes tracked in Nebraska, with a link to explore the SQLite database in Datasette Lite.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --text: #1b1f24; --muted: #5b6573;
+    --border: #dde1e6; --accent: #b3122e; --accent-text: #ffffff;
+    --repeater: #2a6fdb; --client: #1f9d6b; --room: #d9822b; --other: #8a8f98;
+    --bar-bg: #eceff3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --surface: #1a1f25; --text: #e7eaee; --muted: #9aa4b1;
+      --border: #2c333c; --accent: #e04a63; --accent-text: #ffffff;
+      --repeater: #5b95f0; --client: #3cc08d; --room: #f0a04e; --other: #9aa0a8;
+      --bar-bg: #262d35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; justify-content: space-between; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 1.8rem; }
+  h2 { font-size: 1.1rem; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 4px 0 0; }
+  a { color: var(--accent); }
+  .btn {
+    display: inline-block; background: var(--accent); color: var(--accent-text);
+    padding: 10px 16px; border-radius: 8px; text-decoration: none; font-weight: 600;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .tile .v { font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile .l { color: var(--muted); font-size: .85rem; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .grid2 .card { margin-bottom: 0; }
+  #map { height: 440px; border-radius: 8px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; color: var(--muted); font-size: .85rem; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .bars .row { display: grid; grid-template-columns: 130px 1fr 48px; gap: 8px; align-items: center; margin: 6px 0; }
+  .bars .track { background: var(--bar-bg); border-radius: 4px; height: 14px; overflow: hidden; }
+  .bars .fill { height: 100%; border-radius: 4px; }
+  .bars .n { text-align: right; font-variant-numeric: tabular-nums; }
+  .tbl-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=search] {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit; margin-bottom: 10px;
+  }
+  .nodes-scroll { max-height: 480px; overflow: auto; }
+  .muted { color: var(--muted); }
+  code { font-size: .85em; }
+  #status { color: var(--muted); }
+  .links li { margin: 4px 0; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Nebraska Mesh Nodes</h1>
+      <p class="sub">MeshCore nodes reporting a location in Nebraska, tracked from <code>map.meshcore.dev</code>.</p>
+    </div>
+    <a id="dsl-main" class="btn" href="https://lite.datasette.io/?url=https://payne.github.io/NebraskaMeshScraping/nebraska_mesh.db">Explore in Datasette Lite &rarr;</a>
+  </header>
+
+  <p id="status">Loading database&hellip;</p>
+
+  <div id="content" hidden>
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <h2>Map</h2>
+      <div id="map"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Nodes by type</h2>
+        <div class="bars" id="by-type"></div>
+      </div>
+      <div class="card">
+        <h2>Last advert heard</h2>
+        <div class="bars" id="by-age"></div>
+      </div>
+      <div class="card">
+        <h2>Radio settings</h2>
+        <div class="tbl-wrap"><table id="radio"></table></div>
+      </div>
+      <div class="card">
+        <h2>Explore with SQL</h2>
+        <ul class="links" id="dsl-links"></ul>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Recent fetch runs</h2>
+      <div class="tbl-wrap"><table id="runs"></table></div>
+    </div>
+
+    <div class="card">
+      <h2>Recent activity</h2>
+      <div class="tbl-wrap"><table id="activity"></table></div>
+    </div>
+
+    <div class="card">
+      <h2>All nodes</h2>
+      <input type="search" id="filter" placeholder="Filter by name, type, or key&hellip;">
+      <div class="tbl-wrap nodes-scroll"><table id="nodes"></table></div>
+    </div>
+  </div>
+
+  <footer>
+    Data: <a href="nebraska_mesh.db">nebraska_mesh.db</a> (SQLite) &middot;
+    Source: <a href="https://github.com/payne/NebraskaMeshScraping">github.com/payne/NebraskaMeshScraping</a>
+  </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const DB_URL = new URL("nebraska_mesh.db", location.href).href;
+const DB_NAME = "nebraska_mesh";
+const dsl = (frag = "") => "https://lite.datasette.io/?url=" + encodeURIComponent(DB_URL) + frag;
+const dslSql = sql => dsl("#/" + DB_NAME + "?sql=" + encodeURIComponent(sql));
+
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const TYPE_VAR = { "Repeater": "--repeater", "Client": "--client", "Room Server": "--room" };
+const typeColor = t => css(TYPE_VAR[t] || "--other");
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtDate = s => {
+  if (!s) return "";
+  const d = new Date(s);
+  return isNaN(d) ? s : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+};
+
+function rows(db, sql) {
+  const res = db.exec(sql);
+  if (!res.length) return [];
+  const { columns, values } = res[0];
+  return values.map(v => Object.fromEntries(columns.map((c, i) => [c, v[i]])));
+}
+
+function table(el, cols, data) {
+  el.innerHTML =
+    "<thead><tr>" + cols.map(c => `<th${c.num ? ' style="text-align:right"' : ""}>${esc(c.label)}</th>`).join("") + "</tr></thead>" +
+    "<tbody>" + data.map(r => "<tr>" + cols.map(c => {
+      const v = c.fmt ? c.fmt(r[c.key], r) : esc(r[c.key]);
+      return `<td${c.num ? ' class="num"' : ""}>${v}</td>`;
+    }).join("") + "</tr>").join("") + "</tbody>";
+}
+
+function bars(el, items) {
+  const max = Math.max(1, ...items.map(i => i.n));
+  el.innerHTML = items.map(i => `
+    <div class="row">
+      <span>${esc(i.label)}</span>
+      <div class="track"><div class="fill" style="width:${(100 * i.n / max).toFixed(1)}%;background:${i.color}"></div></div>
+      <span class="n">${i.n}</span>
+    </div>`).join("");
+}
+
+async function main() {
+  document.getElementById("dsl-main").href = dsl("#/" + DB_NAME + "/nodes");
+
+  const [SQL, buf] = await Promise.all([
+    initSqlJs({ locateFile: f => "https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/" + f }),
+    fetch(DB_URL, { cache: "no-cache" }).then(r => {
+      if (!r.ok) throw new Error("HTTP " + r.status + " fetching database");
+      return r.arrayBuffer();
+    }),
+  ]);
+  const db = new SQL.Database(new Uint8Array(buf));
+
+  // Tiles
+  const t = rows(db, `
+    SELECT count(*) AS total,
+           sum(is_active) AS active,
+           sum(type_name = 'Repeater') AS repeaters,
+           sum(type_name = 'Client') AS clients,
+           sum(type_name = 'Room Server') AS rooms
+    FROM nodes`)[0];
+  const lastRun = rows(db, "SELECT * FROM fetch_runs ORDER BY run_at DESC LIMIT 1")[0];
+  const tiles = [
+    ["Tracked nodes", t.total],
+    ["Active", t.active],
+    ["Repeaters", t.repeaters],
+    ["Clients", t.clients],
+    ["Room servers", t.rooms],
+    ["Last fetch", lastRun ? fmtDate(lastRun.run_at) : "—"],
+  ];
+  document.getElementById("tiles").innerHTML = tiles.map(([l, v]) =>
+    `<div class="tile"><div class="v"${typeof v === "string" ? ' style="font-size:1rem;padding-top:.55rem"' : ""}>${esc(v)}</div><div class="l">${esc(l)}</div></div>`
+  ).join("");
+
+  // Map
+  const nodes = rows(db, `SELECT * FROM nodes ORDER BY adv_name COLLATE NOCASE`);
+  const map = L.map("map", { scrollWheelZoom: false });
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
+  }).addTo(map);
+  const pts = [];
+  for (const n of nodes) {
+    if (n.lat == null || n.lon == null) continue;
+    pts.push([n.lat, n.lon]);
+    L.circleMarker([n.lat, n.lon], {
+      radius: 6, weight: 1, color: "#000", opacity: .4,
+      fillColor: typeColor(n.type_name), fillOpacity: n.is_active ? .85 : .3,
+    }).bindPopup(
+      `<strong>${esc(n.adv_name || "(unnamed)")}</strong><br>${esc(n.type_name)}` +
+      `<br>Last advert: ${esc(fmtDate(n.last_advert))}` +
+      `<br><code>${esc(n.public_key.slice(0, 16))}&hellip;</code>`
+    ).addTo(map);
+  }
+  if (pts.length) map.fitBounds(pts, { padding: [20, 20] });
+  else map.setView([41.5, -99.8], 6);
+
+  const types = rows(db, "SELECT type_name, count(*) AS n FROM nodes GROUP BY type_name ORDER BY n DESC");
+  document.getElementById("legend").innerHTML = types.map(r =>
+    `<span><span class="dot" style="background:${typeColor(r.type_name)}"></span>${esc(r.type_name)}</span>`).join("");
+
+  bars(document.getElementById("by-type"),
+    types.map(r => ({ label: r.type_name, n: r.n, color: typeColor(r.type_name) })));
+
+  // Last-advert age buckets (relative to the most recent fetch, so the page doesn't drift)
+  const ref = lastRun ? `'${lastRun.run_at}'` : "'now'";
+  const age = rows(db, `
+    WITH a AS (SELECT julianday(${ref}) - julianday(last_advert) AS d FROM nodes)
+    SELECT
+      sum(d < 0)                  AS future,
+      sum(d >= 0 AND d < 1)       AS day,
+      sum(d >= 1 AND d < 7)       AS week,
+      sum(d >= 7 AND d < 30)      AS month,
+      sum(d >= 30 AND d < 365)    AS year,
+      sum(d >= 365)               AS older,
+      sum(d IS NULL)              AS unknown
+    FROM a`)[0];
+  const accent = css("--repeater");
+  bars(document.getElementById("by-age"), [
+    { label: "< 24 hours", n: age.day, color: accent },
+    { label: "1–7 days", n: age.week, color: accent },
+    { label: "7–30 days", n: age.month, color: accent },
+    { label: "30 days – 1 yr", n: age.year, color: accent },
+    { label: "> 1 year", n: age.older, color: accent },
+    ...(age.future ? [{ label: "Future (bad clock)", n: age.future, color: css("--other") }] : []),
+    ...(age.unknown ? [{ label: "Unknown", n: age.unknown, color: css("--other") }] : []),
+  ]);
+
+  // Radio settings
+  table(document.getElementById("radio"), [
+    { key: "freq_mhz", label: "Freq (MHz)", num: true },
+    { key: "bandwidth_khz", label: "BW (kHz)", num: true },
+    { key: "spreading_factor", label: "SF", num: true },
+    { key: "coding_rate", label: "CR", num: true },
+    { key: "n", label: "Nodes", num: true },
+  ], rows(db, `
+    SELECT freq_mhz, bandwidth_khz, spreading_factor, coding_rate, count(*) AS n
+    FROM nodes GROUP BY 1, 2, 3, 4 ORDER BY n DESC LIMIT 8`));
+
+  // Datasette Lite deep links
+  const links = [
+    ["Browse the nodes table", dsl("#/" + DB_NAME + "/nodes")],
+    ["Browse node activity", dsl("#/" + DB_NAME + "/node_activity")],
+    ["Browse fetch runs", dsl("#/" + DB_NAME + "/fetch_runs")],
+    ["Most recently heard nodes", dslSql(
+      "select adv_name, type_name, last_advert, lat, lon from nodes\nwhere last_advert <= datetime('now')\norder by last_advert desc limit 50")],
+    ["Nodes per radio setting", dslSql(
+      "select freq_mhz, bandwidth_khz, spreading_factor, coding_rate, count(*) as n\nfrom nodes group by 1, 2, 3, 4 order by n desc")],
+    ["Activity joined to node names", dslSql(
+      "select a.occurred_at, a.event_type, n.adv_name, a.detail\nfrom node_activity a join nodes n using (public_key)\norder by a.occurred_at desc limit 100")],
+  ];
+  document.getElementById("dsl-links").innerHTML =
+    links.map(([l, h]) => `<li><a href="${esc(h)}">${esc(l)}</a></li>`).join("");
+
+  // Fetch runs
+  table(document.getElementById("runs"), [
+    { key: "run_at", label: "Run at", fmt: fmtDate },
+    { key: "status", label: "Status" },
+    { key: "total_nodes_global", label: "Global", num: true },
+    { key: "total_nodes_nebraska", label: "Nebraska", num: true },
+    { key: "new_count", label: "New", num: true },
+    { key: "changed_count", label: "Changed", num: true },
+    { key: "went_inactive_count", label: "Went inactive", num: true },
+    { key: "error_message", label: "Error" },
+  ], rows(db, "SELECT * FROM fetch_runs ORDER BY run_at DESC LIMIT 10"));
+
+  // Activity
+  const actCounts = rows(db, "SELECT event_type, count(*) AS n FROM node_activity GROUP BY 1 ORDER BY n DESC");
+  const act = rows(db, `
+    SELECT a.occurred_at, a.event_type, n.adv_name, n.type_name
+    FROM node_activity a LEFT JOIN nodes n USING (public_key)
+    ORDER BY a.occurred_at DESC, a.id DESC LIMIT 15`);
+  const actEl = document.getElementById("activity");
+  table(actEl, [
+    { key: "occurred_at", label: "When", fmt: fmtDate },
+    { key: "event_type", label: "Event" },
+    { key: "adv_name", label: "Node" },
+    { key: "type_name", label: "Type" },
+  ], act);
+  actEl.insertAdjacentHTML("beforebegin", `<p class="muted" style="margin-top:0">` +
+    actCounts.map(r => `${esc(r.event_type)}: ${r.n}`).join(" &middot; ") + ` (showing latest 15)</p>`);
+
+  // All nodes
+  const nodesEl = document.getElementById("nodes");
+  const nodeCols = [
+    { key: "adv_name", label: "Name", fmt: v => esc(v || "(unnamed)") },
+    { key: "type_name", label: "Type", fmt: v => `<span class="dot" style="background:${typeColor(v)}"></span>${esc(v)}` },
+    { key: "last_advert", label: "Last advert", fmt: fmtDate },
+    { key: "lat", label: "Lat", num: true },
+    { key: "lon", label: "Lon", num: true },
+    { key: "source", label: "Source" },
+    { key: "public_key", label: "Key", fmt: v => `<code>${esc(v.slice(0, 12))}</code>` },
+  ];
+  const render = q => {
+    q = q.trim().toLowerCase();
+    table(nodesEl, nodeCols, q ? nodes.filter(n =>
+      [n.adv_name, n.type_name, n.public_key].some(v => String(v ?? "").toLowerCase().includes(q))) : nodes);
+  };
+  document.getElementById("filter").addEventListener("input", e => render(e.target.value));
+  render("");
+
+  document.getElementById("status").hidden = true;
+  document.getElementById("content").hidden = false;
+  map.invalidateSize();
+  if (pts.length) map.fitBounds(pts, { padding: [20, 20] });
+}
+
+main().catch(err => {
+  document.getElementById("status").textContent = "Could not load the database: " + err.message;
+  console.error(err);
+});
+</script>
+</body>
+</html>
