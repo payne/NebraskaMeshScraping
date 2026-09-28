@@ -164,6 +164,9 @@ const TYPE_VAR = { "Repeater": "--repeater", "Client": "--client", "Room Server"
 const typeColor = t => css(TYPE_VAR[t] || "--other");
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const nodeLink = (name, key) => key
+  ? `<a href="https://analyzer.nebraskamesh.net/#/nodes/${encodeURIComponent(key)}" target="_blank" rel="noopener">${esc(name || "(unnamed)")}</a>`
+  : esc(name || "(unnamed)");
 const fmtDate = s => {
   if (!s) return "";
   const d = new Date(s);
@@ -249,7 +252,7 @@ async function main() {
       radius: 6, weight: 1, color: "#000", opacity: .4,
       fillColor: typeColor(n.type_name), fillOpacity: n.is_active ? .85 : .3,
     }).bindPopup(
-      `<strong>${esc(n.adv_name || "(unnamed)")}</strong><br>${esc(n.type_name)}` +
+      `<strong>${nodeLink(n.adv_name, n.public_key)}</strong><br>${esc(n.type_name)}` +
       `<br>Last advert: ${esc(fmtDate(n.last_advert))}` +
       `<br><code>${esc(n.public_key.slice(0, 16))}&hellip;</code>`
     ).addTo(map);
@@ -329,14 +332,14 @@ async function main() {
   // Activity
   const actCounts = rows(db, "SELECT event_type, count(*) AS n FROM node_activity GROUP BY 1 ORDER BY n DESC");
   const act = rows(db, `
-    SELECT a.occurred_at, a.event_type, n.adv_name, n.type_name
+    SELECT a.occurred_at, a.event_type, a.public_key, n.adv_name, n.type_name
     FROM node_activity a LEFT JOIN nodes n USING (public_key)
     ORDER BY a.occurred_at DESC, a.id DESC LIMIT 15`);
   const actEl = document.getElementById("activity");
   table(actEl, [
     { key: "occurred_at", label: "When", fmt: fmtDate },
     { key: "event_type", label: "Event" },
-    { key: "adv_name", label: "Node" },
+    { key: "adv_name", label: "Node", fmt: (v, r) => nodeLink(v, r.public_key) },
     { key: "type_name", label: "Type" },
   ], act);
   actEl.insertAdjacentHTML("beforebegin", `<p class="muted" style="margin-top:0">` +
@@ -345,7 +348,7 @@ async function main() {
   // All nodes
   const nodesEl = document.getElementById("nodes");
   const nodeCols = [
-    { key: "adv_name", label: "Name", fmt: v => esc(v || "(unnamed)") },
+    { key: "adv_name", label: "Name", fmt: (v, r) => nodeLink(v, r.public_key) },
     { key: "type_name", label: "Type", fmt: v => `<span class="dot" style="background:${typeColor(v)}"></span>${esc(v)}` },
     { key: "last_advert", label: "Last advert", fmt: fmtDate },
     { key: "lat", label: "Lat", num: true },

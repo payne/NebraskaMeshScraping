@@ -176,6 +176,9 @@ AREA_VAR[OUTSIDE] = "--outside";
 const areaColor = a => css(AREA_VAR[a] || "--unknown");
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const nodeLink = (name, key) => key
+  ? `<a href="https://analyzer.nebraskamesh.net/#/nodes/${encodeURIComponent(key)}" target="_blank" rel="noopener">${esc(name || "(unnamed)")}</a>`
+  : esc(name || "(unnamed)");
 const fmtDate = s => {
   if (!s) return "";
   const d = new Date(s);
@@ -259,7 +262,7 @@ async function main() {
       radius: 7, weight: 1, color: "#000", opacity: .45,
       fillColor: areaColor(n.area), fillOpacity: n.is_active ? .85 : .35,
     }).bindPopup(
-      `<strong>${esc(n.callsign)}</strong> &mdash; ${esc(n.adv_name)}<br>${esc(n.type_name)} &middot; ${esc(n.area)}` +
+      `<strong>${esc(n.callsign)}</strong> &mdash; ${nodeLink(n.adv_name, n.public_key)}<br>${esc(n.type_name)} &middot; ${esc(n.area)}` +
       `<br>Last advert: ${esc(fmtDate(n.last_advert))}` +
       `<br><a href="https://www.qrz.com/db/${encodeURIComponent(n.callsign)}" target="_blank" rel="noopener">QRZ lookup</a>`
     ));
@@ -280,7 +283,7 @@ async function main() {
   // Table
   const cols = [
     { key: "callsign", label: "Callsign", fmt: v => `<span class="call">${esc(v)}</span>` },
-    { key: "adv_name", label: "Node name" },
+    { key: "adv_name", label: "Node name", fmt: (v, n) => nodeLink(v, n.public_key) },
     { key: "type_name", label: "Type" },
     { key: "area", label: "Area", fmt: v => `<span class="dot" style="background:${areaColor(v)}"></span>${esc(v)}` },
     { key: "is_active", label: "Active", fmt: v => v ? "Yes" : '<span class="muted">No</span>' },
@@ -323,6 +326,7 @@ async function main() {
   };
 
   tbl.addEventListener("click", e => {
+    if (e.target.closest("a")) return;
     const btn = e.target.closest("th button");
     if (btn) {
       const k = btn.dataset.key;
