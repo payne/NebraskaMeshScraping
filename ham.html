@@ -79,6 +79,7 @@
     <div>
       <h1>Nebraska Mesh Hams</h1>
       <p class="sub">Nodes whose name contains something that looks like an amateur radio callsign. <a href="index.html">&larr; All nodes</a></p>
+      <p class="sub" id="scraped">Data scraped from <a href="https://nebraskamesh.net">NebraskaMesh.net</a>&hellip;</p>
     </div>
     <a id="dsl-main" class="btn" target="_blank" rel="noopener" href="https://lite.datasette.io/">Open query in Datasette Lite &rarr;</a>
   </header>
@@ -178,6 +179,12 @@ async function main() {
     }),
   ]);
   const db = new SQL.Database(new Uint8Array(buf));
+
+  // When the data was scraped: the latest successful fetch run
+  const scraped = rows(db, "SELECT run_at FROM fetch_runs WHERE status = 'ok' ORDER BY run_at DESC LIMIT 1")[0];
+  document.getElementById("scraped").innerHTML = scraped
+    ? `Data scraped from <a href="https://nebraskamesh.net">NebraskaMesh.net</a> (via its MeshCore map API) on <time datetime="${esc(scraped.run_at)}">${esc(fmtDate(scraped.run_at))}</time>.`
+    : `Data scraped from <a href="https://nebraskamesh.net">NebraskaMesh.net</a>; no successful scrape recorded yet.`;
 
   const hams = rows(db, "SELECT * FROM nodes ORDER BY adv_name COLLATE NOCASE")
     .map(n => ({ ...n, callsign: findCall(n.adv_name) }))

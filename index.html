@@ -74,6 +74,7 @@
     <div>
       <h1>Nebraska Mesh Nodes</h1>
       <p class="sub">MeshCore nodes reporting a location in Nebraska, tracked from <code>map.meshcore.dev</code>. <a href="ham.html">Ham callsign nodes &rarr;</a></p>
+      <p class="sub" id="scraped">Data scraped from <a href="https://nebraskamesh.net">NebraskaMesh.net</a>&hellip;</p>
     </div>
     <a id="dsl-main" class="btn" href="https://lite.datasette.io/?url=https://payne.github.io/NebraskaMeshScraping/nebraska_mesh.db">Explore in Datasette Lite &rarr;</a>
   </header>
@@ -187,6 +188,12 @@ async function main() {
     }),
   ]);
   const db = new SQL.Database(new Uint8Array(buf));
+
+  // When the data was scraped: the latest successful fetch run
+  const scraped = rows(db, "SELECT run_at FROM fetch_runs WHERE status = 'ok' ORDER BY run_at DESC LIMIT 1")[0];
+  document.getElementById("scraped").innerHTML = scraped
+    ? `Data scraped from <a href="https://nebraskamesh.net">NebraskaMesh.net</a> (via its MeshCore map API) on <time datetime="${esc(scraped.run_at)}">${esc(fmtDate(scraped.run_at))}</time>.`
+    : `Data scraped from <a href="https://nebraskamesh.net">NebraskaMesh.net</a>; no successful scrape recorded yet.`;
 
   // Tiles
   const t = rows(db, `
