@@ -54,6 +54,21 @@ python nebraska_mesh_tracker.py runs
 By default the DB lives at `./nebraska_mesh.db` (override with `--db` or
 the `MESH_DB_PATH` env var).
 
+## Web pages
+
+`index.html` (all Nebraska nodes) and `ham.html` (nodes named with a ham
+callsign) have no data built in. Each time one of them loads, it downloads
+`nebraska_mesh.db` and queries it in the browser with
+[sql.js](https://sql.js.org/). The "Data scraped …" line comes from the
+latest successful row in `fetch_runs`.
+
+So nothing needs to regenerate the HTML. To update the pages, run the
+tracker and publish the new `nebraska_mesh.db` next to them (e.g. commit
+and push it to GitHub Pages).
+
+Serve the pages over HTTP (`python -m http.server`), not `file://`,
+because browsers block `fetch()` of local files.
+
 ## Scheduling
 
 ### Option A — cron (simplest)
