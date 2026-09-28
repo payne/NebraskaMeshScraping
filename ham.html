@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebraska Mesh Hams</title>
+<meta name="description" content="Nebraska Mesh nodes whose names contain an amateur radio callsign, with a map, area summary, and Datasette Lite query.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --text: #1b1f24; --muted: #5b6573;
+    --border: #dde1e6; --accent: #b3122e; --accent-text: #ffffff;
+    --omaha: #2a6fdb; --lincoln: #b3122e; --outside: #d9822b; --unknown: #8a8f98;
+    --row-hover: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --surface: #1a1f25; --text: #e7eaee; --muted: #9aa4b1;
+      --border: #2c333c; --accent: #e04a63; --accent-text: #ffffff;
+      --omaha: #5b95f0; --lincoln: #e04a63; --outside: #f0a04e; --unknown: #9aa0a8;
+      --row-hover: #222830;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; justify-content: space-between; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 1.8rem; }
+  h2 { font-size: 1.1rem; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 4px 0 0; }
+  a { color: var(--accent); }
+  .btn {
+    display: inline-block; background: var(--accent); color: var(--accent-text);
+    padding: 10px 16px; border-radius: 8px; text-decoration: none; font-weight: 600;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; border-top: 4px solid var(--c, var(--border)); }
+  .tile .v { font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .tile .l { font-weight: 600; }
+  .tile .d { color: var(--muted); font-size: .85rem; }
+  #map { height: 460px; border-radius: 8px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; color: var(--muted); font-size: .85rem; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .controls input, .controls select {
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  .controls input { flex: 1 1 220px; min-width: 0; }
+  #count { color: var(--muted); font-size: .9rem; margin-left: auto; }
+  .tbl-wrap { overflow-x: auto; max-height: 560px; overflow-y: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+  th button {
+    all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center;
+  }
+  th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  th .arrow { opacity: .35; font-size: .8em; }
+  th[aria-sort] .arrow { opacity: 1; color: var(--text); }
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--row-hover); }
+  .call { font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .muted { color: var(--muted); }
+  #status { color: var(--muted); }
+  .note { color: var(--muted); font-size: .85rem; margin: 10px 0 0; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Nebraska Mesh Hams</h1>
+      <p class="sub">Nodes whose name contains something that looks like an amateur radio callsign. <a href="index.html">&larr; All nodes</a></p>
+    </div>
+    <a id="dsl-main" class="btn" target="_blank" rel="noopener" href="https://lite.datasette.io/">Open query in Datasette Lite &rarr;</a>
+  </header>
+
+  <p id="status">Loading database&hellip;</p>
+
+  <div id="content" hidden>
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <h2>Map</h2>
+      <div id="map"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="card">
+      <h2>Ham nodes</h2>
+      <div class="controls">
+        <input type="search" id="filter" placeholder="Filter by callsign, name, type&hellip;" aria-label="Filter">
+        <select id="area-filter" aria-label="Area"><option value="">All areas</option></select>
+        <select id="type-filter" aria-label="Type"><option value="">All types</option></select>
+        <span id="count"></span>
+      </div>
+      <div class="tbl-wrap"><table id="hams"></table></div>
+      <p class="note" id="method"></p>
+    </div>
+  </div>
+
+  <footer>
+    Data: <a href="nebraska_mesh.db">nebraska_mesh.db</a> (SQLite) &middot;
+    Source: <a href="https://github.com/payne/NebraskaMeshScraping">github.com/payne/NebraskaMeshScraping</a>
+  </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const DB_URL = new URL("nebraska_mesh.db", location.href).href;
+const DB_NAME = "nebraska_mesh";
+const dsl = (frag = "") => "https://lite.datasette.io/?url=" + encodeURIComponent(DB_URL) + frag;
+const dslSql = sql => dsl("#/" + DB_NAME + "?sql=" + encodeURIComponent(sql));
+
+// US amateur callsigns: 1x/2x prefix (K, N, W, or AA–AL) + district digit + 1–3 letter suffix.
+const CALL = "(?:[KNW][A-Z]?|A[A-L])[0-9][A-Z]{1,3}";
+// Standalone token, any case: "KF0TIL-R", "Jim Ka0kcv", "W0CES_R@YorkNe"
+const CALL_TOKEN = new RegExp(`(?<![A-Za-z0-9])(${CALL})(?![A-Za-z0-9])`, "i");
+// Upper-case callsign glued onto camelCase text: "BigSolarRepeaterK0OMH"
+const CALL_CAMEL = new RegExp(`(?<=[a-z])(${CALL})(?![A-Za-z0-9])`);
+const findCall = name => {
+  const s = String(name ?? "").replace(/[Øø]/g, "0"); // slashed zero, as in "WØYEM"
+  const m = s.match(CALL_TOKEN) || s.match(CALL_CAMEL);
+  return m ? m[1].toUpperCase() : null;
+};
+
+// Areas: approximate metro radius around each downtown (km). Degrees → km via
+// 111 km/° latitude and 84 km/° longitude (cos 41°), so SQL can do the same without trig.
+const AREAS = [
+  { name: "Omaha", lat: 41.2565, lon: -95.9345, km: 30, color: "--omaha" },
+  { name: "Lincoln", lat: 40.8136, lon: -96.7026, km: 20, color: "--lincoln" },
+];
+const OUTSIDE = "Outside Omaha & Lincoln";
+const areaOf = (lat, lon) => {
+  if (lat == null || lon == null) return "Unknown";
+  for (const a of AREAS)
+    if (((lat - a.lat) * 111) ** 2 + ((lon - a.lon) * 84) ** 2 < a.km ** 2) return a.name;
+  return OUTSIDE;
+};
+const areaSql = AREAS.map(a =>
+  `when ((lat - ${a.lat}) * 111) * ((lat - ${a.lat}) * 111) + ((lon - (${a.lon})) * 84) * ((lon - (${a.lon})) * 84) < ${a.km * a.km} then '${a.name}'`
+).join("\n    ");
+
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const AREA_VAR = Object.fromEntries(AREAS.map(a => [a.name, a.color]));
+AREA_VAR[OUTSIDE] = "--outside";
+const areaColor = a => css(AREA_VAR[a] || "--unknown");
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtDate = s => {
+  if (!s) return "";
+  const d = new Date(s);
+  return isNaN(d) ? s : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+};
+
+function rows(db, sql) {
+  const res = db.exec(sql);
+  if (!res.length) return [];
+  const { columns, values } = res[0];
+  return values.map(v => Object.fromEntries(columns.map((c, i) => [c, v[i]])));
+}
+
+async function main() {
+  const [SQL, buf] = await Promise.all([
+    initSqlJs({ locateFile: f => "https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/" + f }),
+    fetch(DB_URL, { cache: "no-cache" }).then(r => {
+      if (!r.ok) throw new Error("HTTP " + r.status + " fetching database");
+      return r.arrayBuffer();
+    }),
+  ]);
+  const db = new SQL.Database(new Uint8Array(buf));
+
+  const hams = rows(db, "SELECT * FROM nodes ORDER BY adv_name COLLATE NOCASE")
+    .map(n => ({ ...n, callsign: findCall(n.adv_name) }))
+    .filter(n => n.callsign)
+    .map(n => ({ ...n, area: areaOf(n.lat, n.lon) }));
+
+  // A ham with nodes in several areas is counted once, in the area holding most of their nodes.
+  const byCall = new Map();
+  for (const n of hams) {
+    if (!byCall.has(n.callsign)) byCall.set(n.callsign, []);
+    byCall.get(n.callsign).push(n);
+  }
+  const areaOrder = [...AREAS.map(a => a.name), OUTSIDE, "Unknown"];
+  const homeArea = new Map();
+  for (const [call, ns] of byCall) {
+    const counts = {};
+    for (const n of ns) counts[n.area] = (counts[n.area] || 0) + 1;
+    homeArea.set(call, areaOrder.reduce((best, a) => (counts[a] || 0) > (counts[best] || 0) ? a : best, areaOrder[0]));
+  }
+
+  // Summary tiles
+  const tile = (label, hamsN, nodesN, colorVar) =>
+    `<div class="tile" style="--c:${colorVar ? `var(${colorVar})` : "var(--text)"}">
+       <div class="l">${esc(label)}</div>
+       <div class="v">${hamsN}</div>
+       <div class="d">${hamsN === 1 ? "ham" : "hams"} &middot; ${nodesN} ${nodesN === 1 ? "node" : "nodes"}</div>
+     </div>`;
+  const summaryAreas = [...AREAS.map(a => a.name), OUTSIDE];
+  if (hams.some(n => n.area === "Unknown")) summaryAreas.push("Unknown");
+  document.getElementById("tiles").innerHTML =
+    tile("All hams", byCall.size, hams.length) +
+    summaryAreas.map(a => tile(
+      a === OUTSIDE ? "Outside those cities" : a === "Unknown" ? "No location" : a + " area",
+      [...homeArea.values()].filter(h => h === a).length,
+      hams.filter(n => n.area === a).length,
+      AREA_VAR[a] || "--unknown",
+    )).join("");
+
+  // Map
+  const map = L.map("map", { scrollWheelZoom: false });
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
+  }).addTo(map);
+  for (const a of AREAS)
+    L.circle([a.lat, a.lon], {
+      radius: a.km * 1000, color: areaColor(a.name), weight: 1.5, dashArray: "6 6", fill: false, interactive: false,
+    }).addTo(map);
+  const layer = L.layerGroup().addTo(map);
+  const markers = new Map();
+  for (const n of hams) {
+    if (n.lat == null || n.lon == null) continue;
+    markers.set(n.public_key, L.circleMarker([n.lat, n.lon], {
+      radius: 7, weight: 1, color: "#000", opacity: .45,
+      fillColor: areaColor(n.area), fillOpacity: n.is_active ? .85 : .35,
+    }).bindPopup(
+      `<strong>${esc(n.callsign)}</strong> &mdash; ${esc(n.adv_name)}<br>${esc(n.type_name)} &middot; ${esc(n.area)}` +
+      `<br>Last advert: ${esc(fmtDate(n.last_advert))}` +
+      `<br><a href="https://www.qrz.com/db/${encodeURIComponent(n.callsign)}" target="_blank" rel="noopener">QRZ lookup</a>`
+    ));
+  }
+  document.getElementById("legend").innerHTML =
+    [...AREAS.map(a => a.name), OUTSIDE].map(a =>
+      `<span><span class="dot" style="background:${areaColor(a)}"></span>${esc(a)}</span>`).join("") +
+    `<span>Dashed circles: ${AREAS.map(a => `${a.name} ${a.km} km`).join(", ")} &middot; faded = inactive</span>`;
+
+  // Filters
+  const areaSel = document.getElementById("area-filter");
+  const typeSel = document.getElementById("type-filter");
+  const uniq = k => [...new Set(hams.map(n => n[k]))].filter(Boolean).sort();
+  areaSel.insertAdjacentHTML("beforeend", areaOrder.filter(a => hams.some(n => n.area === a))
+    .map(a => `<option>${esc(a)}</option>`).join(""));
+  typeSel.insertAdjacentHTML("beforeend", uniq("type_name").map(t => `<option>${esc(t)}</option>`).join(""));
+
+  // Table
+  const cols = [
+    { key: "callsign", label: "Callsign", fmt: v => `<span class="call">${esc(v)}</span>` },
+    { key: "adv_name", label: "Node name" },
+    { key: "type_name", label: "Type" },
+    { key: "area", label: "Area", fmt: v => `<span class="dot" style="background:${areaColor(v)}"></span>${esc(v)}` },
+    { key: "is_active", label: "Active", fmt: v => v ? "Yes" : '<span class="muted">No</span>' },
+    { key: "last_advert", label: "Last advert", fmt: fmtDate },
+    { key: "lat", label: "Lat", num: true },
+    { key: "lon", label: "Lon", num: true },
+  ];
+  let sortKey = "callsign", sortDir = 1;
+  const tbl = document.getElementById("hams");
+
+  const render = () => {
+    const q = document.getElementById("filter").value.trim().toLowerCase();
+    const area = areaSel.value, type = typeSel.value;
+    const shown = hams.filter(n =>
+      (!area || n.area === area) && (!type || n.type_name === type) &&
+      (!q || [n.callsign, n.adv_name, n.type_name, n.area].some(v => String(v ?? "").toLowerCase().includes(q))));
+    shown.sort((a, b) => {
+      const x = a[sortKey], y = b[sortKey];
+      if (x == null || x === "") return 1;
+      if (y == null || y === "") return -1;
+      const c = typeof x === "number" ? x - y : String(x).localeCompare(String(y), undefined, { sensitivity: "base", numeric: true });
+      return c * sortDir || a.callsign.localeCompare(b.callsign) || String(a.adv_name).localeCompare(String(b.adv_name));
+    });
+
+    tbl.innerHTML =
+      "<thead><tr>" + cols.map(c =>
+        `<th class="${c.num ? "num" : ""}"${c.key === sortKey ? ` aria-sort="${sortDir > 0 ? "ascending" : "descending"}"` : ""}>` +
+        `<button data-key="${c.key}">${esc(c.label)}<span class="arrow">${c.key === sortKey ? (sortDir > 0 ? "▲" : "▼") : "↕"}</span></button></th>`
+      ).join("") + "</tr></thead>" +
+      "<tbody>" + shown.map(n => `<tr data-key="${esc(n.public_key)}">` + cols.map(c =>
+        `<td${c.num ? ' class="num"' : ""}>${c.fmt ? c.fmt(n[c.key], n) : esc(n[c.key])}</td>`).join("") + "</tr>").join("") +
+      "</tbody>";
+
+    const shownCalls = new Set(shown.map(n => n.callsign));
+    document.getElementById("count").textContent =
+      `${shown.length} of ${hams.length} nodes · ${shownCalls.size} ${shownCalls.size === 1 ? "ham" : "hams"}`;
+
+    layer.clearLayers();
+    for (const n of shown) markers.get(n.public_key)?.addTo(layer);
+  };
+
+  tbl.addEventListener("click", e => {
+    const btn = e.target.closest("th button");
+    if (btn) {
+      const k = btn.dataset.key;
+      sortDir = k === sortKey ? -sortDir : 1;
+      sortKey = k;
+      render();
+      return;
+    }
+    const tr = e.target.closest("tbody tr");
+    const m = tr && markers.get(tr.dataset.key);
+    if (m) {
+      map.setView(m.getLatLng(), Math.max(map.getZoom(), 12));
+      m.openPopup();
+      document.getElementById("map").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  });
+  for (const el of ["filter", "area-filter", "type-filter"])
+    document.getElementById(el).addEventListener("input", render);
+  render();
+
+  // Datasette Lite: same detection, expressed as SQL over the callsigns found above.
+  const calls = [...byCall.keys()].sort();
+  const sql =
+`-- Nodes whose name contains a ham callsign (list generated by ham.html)
+with calls(callsign) as (
+  values ${calls.map(c => `('${c}')`).join(", ")}
+)
+select
+  c.callsign,
+  n.adv_name,
+  n.type_name,
+  case
+    ${areaSql}
+    else '${OUTSIDE}'
+  end as area,
+  n.is_active,
+  n.last_advert,
+  n.lat,
+  n.lon,
+  n.public_key
+from nodes n
+join calls c on instr(upper(replace(n.adv_name, 'Ø', '0')), c.callsign) > 0
+order by c.callsign, n.adv_name`;
+  document.getElementById("dsl-main").href = dslSql(sql);
+
+  document.getElementById("method").innerHTML =
+    `A callsign is a US-format call (K, N, W or AA–AL prefix, one digit, 1–3 letter suffix) appearing as its own token in the node name, ` +
+    `e.g. <code>KF0TIL-R</code> or <code>W0CES_R@YorkNe</code>. Areas are ${AREAS.map(a => `within ${a.km} km of downtown ${a.name}`).join(" or ")}. ` +
+    `Hams are counted once, in the area holding most of their nodes. Click a column header to sort, or a row to find it on the map.`;
+
+  document.getElementById("status").hidden = true;
+  document.getElementById("content").hidden = false;
+  map.invalidateSize();
+  const pts = [...markers.values()].map(m => m.getLatLng());
+  if (pts.length) map.fitBounds(pts, { padding: [20, 20] });
+  else map.setView([41.5, -99.8], 6);
+}
+
+main().catch(err => {
+  document.getElementById("status").textContent = "Could not load the database: " + err.message;
+  console.error(err);
+});
+</script>
+</body>
+</html>
